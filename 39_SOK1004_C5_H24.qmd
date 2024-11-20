@@ -1,0 +1,319 @@
+---
+title: "SOK-1004 H24 - Case 5"
+author: "39"
+format: pdf
+editor: visual
+---
+
+# Instruksjoner
+
+Denne oppgaven er laget av Even S. Hvinden og oppdatert av Derek J. Clark. Sistnevnte er ansvarlig for eventuelle feil og mangler.
+
+Oppgaven skal løses interaktivt i RStudio ved å legge inn egen kode og kommentarer. Det ferdige dokumentet lagres med kandidatnummeret som navn `[kandidatnummer]_SOK1004_C5_H24.qmd` og lastes opp på deres GitHub-side. Hvis du har kandidatnummer 43, så vil filen hete `43_SOK1004_C5_H24.qmd`. Påse at koden kjører og at dere kan eksportere besvarelsen til pdf. Lever så lenken til GitHub-repositoriumet i Canvas.
+
+# Bakgrunn, læringsmål
+
+I Forelesning 7 leste dere [kapittel 1 i NOU 2015:1](https://www.regjeringen.no/contentassets/ef2418d9076e4423ab5908689da67700/no/pdfs/nou201520150001000dddpdfs.pdf) "Produktivitet - grunnlag for vekst og velferd." I denne oppgaven skal vi oppdatere tall brukt i analysen. Gjennom arbeidet vil dere repetere de grunnleggende ferdighetene i bruk av API, `tidyverse` og `ggplot` som vi har arbeidet med gjennom kurset. Dere vil også få anledning til å reflektere rundt sammenhengene i nasjonalregnskapet og å grave litt i statistikkbanken hos SSB.
+
+# Last inn pakker
+
+```{r}
+# output | false
+rm(list=ls()) 
+library(tidyverse)
+library(rjstat)
+library(httr)
+```
+
+# Oppgave I: Timeverksproduktivitet i markedsrettede fastlandsnæringer
+
+Reproduser en oppdatert versjon av Figur 1.1 "Timeverksproduktivitet, markedsrettede fastlandsnæringer" i rapporten. Her er produktivitet målt som bruttoprodukt i markedsrettet produksjon i Fastlands-Norge per timeverk, utenom bolig.
+
+## Oppgave Ia
+
+Hvorfor trekker Produktivitetskommisjon fra produksjonen av boligtjenester, offentlig etterspørsel, og inntekter fra olje og gass når de beregner produktivitet?
+
+Produktivitetskommisjonen trekker fra produksjon av boligtjeneste ettersom de fleste er private husholdninger som ikke produsere og omsetter noen verdier. Disse verdiene er målt indirekte, som regel i form av kostnadene, og vil ikke gi et ordentlig bilde av produktiviteten i Norge. Offentlig etterspørsel utelates også siden de i stor grad produserer tjenester, for eksempel helsetjenesten. Disse tjenestene krever mye fysisk arbeid, og det blir anntatt at de ikke vil kunne ha like stor produksjonesveks som det private markede. Olje og gass blir trukket fra for å kunne få en reel sammenlikning internasjonalt. Dette er en begrenset naturressurs og etterspørselen etter den er høy. Pågrun av den høye grunnrenten vil den forstyrre utvikling i produksjonen for resten av næringene. Produksjonen av olje og gass er også avhengig av etterspørselen i det internasjonale samfunnet og vil flukturere, noe som vil forstyrre verdien av utvikligen for næringene som kan anses som mer "stabile".
+
+## Oppgave Ib
+
+Skriv kode som bruker en JSON-spørring til å lage en oppdatert versjon av figuren, med observasjoner fra 1996 til 2022. Beregn gjennomsnittlig årlig endring for perioden 1996 - 2005 og, 2005-2013, og 2006 - 2022. Står konklusjonen i rapporten seg?
+
+**Merknad.** Det er tidvis store revisjoner i nasjonalregnskapet. Du må regne med at individuelle tall på årlig endring kan avvike en god del, opp til et halvt prosentpoeng, mens de gjennomsnittlige veksttallene burde avvike noe mindre.
+
+**Tips:** Du henter data på timeverk og bruttoprodukt fra henholdsvis tabell 09174 og 09170.
+
+```{r warning=FALSE, message=FALSE}
+url_09170 <- "https://data.ssb.no/api/v0/no/table/09170/"
+
+
+query_09170 <- '{
+  "query": [
+    {
+      "code": "NACE",
+      "selection": {
+        "filter": "vs:NRNaeringPubAgg",
+        "values": [
+          "pub2X68B",
+          "nr23fn"
+        ]
+      }
+    },
+    {
+      "code": "ContentsCode",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "BNPB"
+        ]
+      }
+    },
+    {
+      "code": "Tid",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "1996",
+          "1997",
+          "1998",
+          "1999",
+          "2000",
+          "2001",
+          "2002",
+          "2003",
+          "2004",
+          "2005",
+          "2006",
+          "2007",
+          "2008",
+          "2009",
+          "2010",
+          "2011",
+          "2012",
+          "2013",
+          "2014",
+          "2015",
+          "2016",
+          "2017",
+          "2018",
+          "2019",
+          "2020",
+          "2021",
+          "2022",
+          "2023"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+hent_indeks.tmp_09170 <- url_09170 %>%
+  POST(body = query_09170, encode = "json")
+
+df_09170 <-  hent_indeks.tmp_09170 %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()
+
+unique(df_09170$næring)
+
+df_09170 <- df_09170 %>%
+  mutate(næring = recode(næring,"¬ Markedsrettet virksomhet Fastlands-Norge"  = "marked")) %>%
+  mutate(næring = recode(næring,"Boligtjenester, egen bolig"  = "bolig"))
+
+df_09170 <- pivot_wider(df_09170, names_from = næring, values_from = value) %>%
+  mutate(netto = marked - bolig)
+df_09170 <- df_09170 %>%
+  select(-bolig) %>%
+  mutate(næring = "¬ Markedsrettet virksomhet Fastlands-Norge")
+  
+```
+
+```{r warning=FALSE, message=FALSE}
+url_09174 <- "https://data.ssb.no/api/v0/no/table/09174/"
+
+
+query_09174 <- '{
+  "query": [
+    {
+      "code": "NACE",
+      "selection": {
+        "filter": "vs:NRNaeringPubAgg",
+        "values": [
+          "nr23fn"
+        ]
+      }
+    },
+    {
+      "code": "ContentsCode",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "Timeverk"
+        ]
+      }
+    },
+    {
+      "code": "Tid",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "1996",
+          "1997",
+          "1998",
+          "1999",
+          "2000",
+          "2001",
+          "2002",
+          "2003",
+          "2004",
+          "2005",
+          "2006",
+          "2007",
+          "2008",
+          "2009",
+          "2010",
+          "2011",
+          "2012",
+          "2013",
+          "2014",
+          "2015",
+          "2016",
+          "2017",
+          "2018",
+          "2019",
+          "2020",
+          "2021",
+          "2022",
+          "2023"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+hent_indeks.tmp_09174 <- url_09174 %>%
+  POST(body = query_09174, encode = "json")
+
+df_09174 <-  hent_indeks.tmp_09174 %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()
+  
+```
+
+```{r warning=FALSE, message=FALSE}
+#vi tar ut boligtjeneste
+#piwot wider må brukes 
+# ny kolonne: z=netto/timer
+# ((z - lag(z))/lag(z)) * 100 - prosentvis endring
+#B.P.FN - B.P.Bolig
+#legge på en linje som viser gjennomsnittet i forskjellige tidperioder
+
+df <- inner_join(df_09174, df_09170, by = c("næring", "år")) %>%
+  select(-marked) %>%
+  rename(mill_timer = "value", mill_kroner = "netto") %>%
+  mutate(statistikkvariabel.x = recode(statistikkvariabel.x, 
+                                       "Utførte timeverk for lønnstakere og selvstendige (mill. timeverk)" = "utførte timeverk")) %>%
+  mutate(statistikkvariabel.y = recode(statistikkvariabel.y, 
+                                       "Bruttoprodukt i basisverdi. Løpende priser (mill. kr)" = "bruttoprodukt")) %>%
+  mutate(næring = recode(næring,"¬ Markedsrettet virksomhet Fastlands-Norge" = "markedsrettet produksjon")) %>% #str_replace() funket ikke så spurte chatgpt om enklere løsning og fikk replace() som svar
+  select("år", everything()) # everything() hentet fra chatgpt
+
+df_produktivitet <- df %>%
+  mutate(produktivitet = mill_kroner/mill_timer) %>%
+  mutate(produktivitet = ((produktivitet-lag(produktivitet))/lag(produktivitet)) * 100)
+
+# løs oppgave 1b her
+```
+
+```{r}
+
+df_produktivitet %>%
+  ggplot(aes(x = år, y = produktivitet)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +
+  labs(
+    title = "Timeverksproduktivitet i Norge (markedsrettet)",
+    x = "År",
+    y = "Produktivitet",
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 50, hjust = 1),
+    plot.title = element_text(hjust = 0.5,size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.title = element_text(size = 14),
+    legend.position = "bottom")
+
+```
+
+```{r}
+gjenn_prod_data <- tribble(
+  ~periode, ~start_år, ~slutt_år,
+  "1997-2005", 1997, 2005,
+  "2006-2011", 2006, 2011,
+  "2006-2023", 2006, 2023
+) %>%
+  rowwise() %>%
+  mutate(gj_produktivitet = mean(df_produktivitet$produktivitet[df_produktivitet$år >= start_år & df_produktivitet$år <= slutt_år], 
+                                 na.rm = TRUE))
+
+df_produktivitet %>%
+  ggplot(aes(x = år, y = produktivitet)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +
+  geom_segment(data = gjenn_prod_data, aes(x = start_år, xend = slutt_år, 
+                                                y = gj_produktivitet, yend = gj_produktivitet), 
+               color = "black", size = 1) +
+  labs(
+    title = "Timeverksproduktivitet i Norge (markedsrettet)",
+    x = "År",
+    y = "Produktivitet",
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 50, hjust = 1),
+    plot.title = element_text(hjust = 0.5,size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.title = element_text(size = 14),
+    legend.position = "bottom")
+```
+
+```{r}
+library(tidyverse)
+
+df_produktivitet1 <- df_produktivitet %>%
+  select(år, produktivitet)
+
+# Intervaller
+gjennomsnittlig_produktivitet <- tribble(
+  ~periode, ~start_år, ~slutt_år,
+  "1996-2005", 1996, 2005,
+  "2006-2011", 2006, 2011,
+  "2006-2023", 2006, 2023
+) %>%
+  rowwise() %>%
+  mutate(gjennomsnitt_produktivitet = mean(df_produktivitet1$produktivitet[df_produktivitet1$år >= start_år & 
+                                                                 df_produktivitet1$år <= slutt_år], na.rm = TRUE))
+
+# Lag plottet
+df_produktivitet1 %>%
+  ggplot(aes(x = år, y = produktivitet)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +
+  geom_segment(data = gjennomsnittlig_produktivitet,
+               aes(x = start_år, xend = slutt_år, 
+                   y = gjennomsnitt_produktivitet, yend = gjennomsnitt_produktivitet),
+               color = "black", size = 1) +
+  labs(
+    title = "Timeverksproduktivitet i Norge (markedsrettet)",
+    x = "År",
+    y = "Produktivitet"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 50, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.title = element_text(size = 14),
+    legend.position = "bottom"
+  )
+```
